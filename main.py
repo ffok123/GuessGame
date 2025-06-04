@@ -1,31 +1,5 @@
 import streamlit as st
 import random
-import json
-from fastapi import FastAPI
-from pydantic import BaseModel
-import uvicorn
-import threading
-import requests
-import os
-from fastapi.middleware.cors import CORSMiddleware
-
-# FastAPI setup
-app = FastAPI()
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-class GameRequest(BaseModel):
-    word_length: int
-
-class GuessRequest(BaseModel):
-    guess: str
 
 # Word lists by length with descriptions
 word_lists = {
@@ -94,15 +68,6 @@ word_associations = {
     # Add associations for other words similarly
 }
 
-# Game state
-game_state = {
-    'word': '',
-    'attempts': 5,
-    'hint': '',
-    'game_over': False,
-    'correct_positions': []  # Add this line
-}
-
 def generate_hint(word_data):
     word = word_data['word']
     length = len(word)
@@ -120,71 +85,86 @@ def generate_hint(word_data):
         'associations': f"Think about: {', '.join(associations[:2])}",  # Show 2 random associations
         'length': f"Word length: {length} letters"
     }
-    game_state['correct_positions'] = indices
     return hints
 
-@app.post("/start_game")
-async def start_game(request: GameRequest):
-    word_length = request.word_length
+def new_game(word_length):
     if word_length not in word_lists:
-        return {"error": "Invalid word length"}
+        st.session_state.error = "Invalid word length"
+        return
     
     word_data = random.choice(word_lists[word_length])
-    game_state['word'] = word_data['word']
-    game_state['attempts'] = 5
-    game_state['hint'] = generate_hint(word_data)
-    game_state['game_over'] = False
-    
-    return {
-        "hint": game_state['hint'],
-        "attempts": game_state['attempts'],
-        "word_length": len(game_state['word']),
-        "correct_positions": game_state['correct_positions']
-    }
+    st.session_state.word = word_data['word']
+    st.session_state.attempts = 5
+    st.session_state.hint = generate_hint(word_data)
+    st.session_state.game_over = False
+    st.session_state.message = ""
+    st.session_state.correct_letters = 0
 
-@app.post("/submit_guess")
-async def submit_guess(request: GuessRequest):
-    guess = request.guess.lower().strip()
-    if game_state['game_over']:
-        return {"message": "Game is over. Start a new game!", "attempts": game_state['attempts'], "game_over": True}
+def submit_guess():
+    guess = st.session_state.guess.lower().strip()
+    if st.session_state.game_over:
+        st.session_state.message = "Game is over. Start a new game!"
+        return
     
-    if len(guess) != len(game_state['word']):
-        return {"message": f"Guess must be {len(game_state['word'])} letters long!", "attempts": game_state['attempts'], "game_over": False}
+    if len(guess) != len(st.session_state.word):
+        st.session_state.message = f"Guess must be {len(st.session_state.word)} letters long!"
+        return
     
-    game_state['attempts'] -= 1
-    if guess == game_state['word']:
-        game_state['game_over'] = True
-        return {"message": "Correct! You win!", "attempts": game_state['attempts'], "game_over": True}
+    st.session_state.attempts -= 1
+    if guess == st.session_state.word:
+        st.session_state.game_over = True
+        st.session_state.message = "Correct! You win!"
+        return
     
-    feedback = ""
-    if not game_state['game_over']:
-        # Add feedback about correct letters
-        correct_letters = sum(1 for i, c in enumerate(guess) if c == game_state['word'][i])
-        feedback = f"{correct_letters} letters in correct position"
+    correct_letters = sum(1 for i, c in enumerate(guess) if c == st.session_state.word[i])
+    st.session_state.correct_letters = correct_letters
+    st.session_state.message = f"Incorrect guess. {correct_letters} letters in correct position. Try again!"
     
-    if game_state['attempts'] <= 0:
-        game_state['game_over'] = True
-        return {"message": f"Game over! The word was '{game_state['word']}'.", "attempts": game_state['attempts'], "game_over": True}
-    
-    return {
-        "message": f"Incorrect guess. {feedback}. Try again!",
-        "attempts": game_state['attempts'],
-        "game_over": game_state['game_over']
-    }
+    if st.session_state.attempts <= 0:
+        st.session_state.game_over = True
+        st.session_state.message = f"Game over! The word was '{st.session_state.word}'."
 
-# Streamlit setup
-def run_streamlit():
+def main():
     st.set_page_config(page_title="Word Guessing Game", layout="centered")
-    with open("./templates/index.html") as f:
-        html_content = f.read()
-    st.components.v1.html(html_content, height=800, scrolling=True)
+    st.title("Word Guessing Game")
 
-# Run FastAPI in a separate thread
-def run_fastapi():
-    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="error")
+    if 'word' not in st.session_state:
+        st.session_state.word = ''
+    if 'attempts' not in st.session_state:
+        st.session_state.attempts = 5
+    if 'hint' not in st.session_state:
+        st.session_state.hint = {}
+    if 'game_over' not in st.session_state:
+        st.session_state.game_over = False
+    if 'message' not in st.session_state:
+        st.session_state.message = ""
+    if 'correct_letters' not in st.session_state:
+        st.session_state.correct_letters = 0
+    if 'error' not in st.session_state:
+        st.session_state.error = ""
+    if 'guess' not in st.session_state:
+        st.session_state.guess = ""
+
+    word_length = st.slider("Select Word Length:", 4, 10, 5)
+
+    if st.button("Start New Game"):
+        new_game(word_length)
+
+    if st.session_state.error:
+        st.error(st.session_state.error)
+
+    if st.session_state.word:
+        st.write(f"Attempts left: {st.session_state.attempts}")
+        st.write(f"Description: {st.session_state.hint['description']}")
+        st.write(f"Associations: {st.session_state.hint['associations']}")
+        st.write(f"Letter hints: {st.session_state.hint['letters']}")
+
+        st.text_input("Enter your guess:", key="guess", on_change=submit_guess, disabled=st.session_state.game_over)
+        if st.session_state.correct_letters > 0 and not st.session_state.game_over:
+            st.write(f"{st.session_state.correct_letters} letters in correct position")
+
+        if st.session_state.message:
+            st.write(st.session_state.message)
 
 if __name__ == "__main__":
-    # Start FastAPI server in a thread
-    threading.Thread(target=run_fastapi, daemon=True).start()
-    # Run Streamlit
-    run_streamlit()
+    main()
