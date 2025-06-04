@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Word Guessing Game</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(to right, #6b7280, #1f2937);
+            font-family: 'Arial', sans-serif;
+            color: white;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .hint-box {
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .hint-item {
+            padding: 8px;
+            border-left: 3px solid;
+        }
+        .hint-letters { border-color: #34d399; }
+        .hint-description { border-color: #818cf8; }
+        .hint-associations { border-color: #f472b6; }
+        .guess-input {
+            padding: 10px;
+            border-radius: 5px;
+            border: none;
+            width: 200px;
+            margin-right: 10px;
+        }
+        .guess-button {
+            background-color: #10b981;
+            padding: 10px 20px;
+            border-radius: 5px;
+            border: none;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .guess-button:hover {
+            background-color: #059669;
+        }
+        .slider {
+            width: 100%;
+            margin: 20px 0;
+        }
+        .attempts {
+            font-size: 1.2rem;
+            color: #facc15;
+        }
+        .history-box {
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .word-display {
+            font-family: monospace;
+            font-size: 2rem;
+            letter-spacing: 0.5rem;
+            margin: 1rem 0;
+            color: #10b981;
+        }
+        .feedback-correct {
+            color: #10b981;
+        }
+        .feedback-partial {
+            color: #fbbf24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-4xl font-bold mb-6">Word Guessing Game</h1>
+        <div>
+            <label for="word-length" class="block text-lg mb-2">Select Word Length: <span id="length-value">5</span></label>
+            <input type="range" id="word-length" min="4" max="10" value="5" class="slider">
+        </div>
+        <button id="start-game" class="guess-button mt-4">Start Game</button>
+        <div id="hint" class="hint-box hidden">
+            <div class="hint-letters hint-item"></div>
+            <div class="hint-description hint-item"></div>
+            <div class="hint-associations hint-item"></div>
+        </div>
+        <div id="attempts" class="attempts hidden">Attempts left: 5</div>
+        <div class="mt-4 hidden" id="guess-section">
+            <div id="current-word-display" class="word-display"></div>
+            <input type="text" 
+                id="guess-input" 
+                class="guess-input" 
+                placeholder="Type your guess"
+                autocomplete="off"
+                onkeyup="this.value = this.value.toLowerCase()"
+                maxlength="10">
+            <button id="submit-guess" class="guess-button">Submit Guess</button>
+            <div id="input-feedback" class="text-sm mt-2"></div>
+        </div>
+        <div id="message" class="mt-4 text-lg"></div>
+        <div id="history" class="history-box hidden"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000';
+        const wordLengthSlider = document.getElementById('word-length');
+        const lengthValue = document.getElementById('length-value');
+        const startGameButton = document.getElementById('start-game');
+        const guessInput = document.getElementById('guess-input');
+        const submitGuessButton = document.getElementById('submit-guess');
+        const hintDiv = document.getElementById('hint');
+        const attemptsDiv = document.getElementById('attempts');
+        const messageDiv = document.getElementById('message');
+        const guessSection = document.getElementById('guess-section');
+        const historyDiv = document.getElementById('history');
+        const inputFeedback = document.getElementById('input-feedback');
+        const currentWordDisplay = document.getElementById('current-word-display');
+        let currentWordLength = 0;
+
+        function updateWordDisplay(input) {
+            const display = input.padEnd(currentWordLength, '_');
+            currentWordDisplay.textContent = display.split('').join(' ');
+            
+            if (input.length === currentWordLength) {
+                inputFeedback.textContent = 'OK - Word length matches!';
+                inputFeedback.className = 'text-sm mt-2 feedback-correct';
+                submitGuessButton.disabled = false;
+            } else {
+                inputFeedback.textContent = `Enter ${currentWordLength - input.length} more letter(s)`;
+                inputFeedback.className = 'text-sm mt-2 feedback-partial';
+                submitGuessButton.disabled = true;
+            }
+        }
+
+        wordLengthSlider.addEventListener('input', () => {
+            lengthValue.textContent = wordLengthSlider.value;
+        });
+
+        startGameButton.addEventListener('click', async () => {
+            try {
+                const wordLength = parseInt(wordLengthSlider.value);
+                const response = await fetch(`${API_URL}/start_game`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ word_length: wordLength })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (data.error) {
+                    messageDiv.textContent = data.error;
+                    messageDiv.classList.add('text-red-400');
+                    return;
+                }
+
+                const hints = data.hint;
+                document.querySelector('.hint-letters').textContent = hints.letters;
+                document.querySelector('.hint-description').textContent = hints.description;
+                document.querySelector('.hint-associations').textContent = hints.associations;
+                hintDiv.classList.remove('hidden');
+
+                currentWordLength = data.word_length;
+                guessInput.maxLength = currentWordLength;
+                guessInput.placeholder = `Enter a ${currentWordLength}-letter word`;
+                attemptsDiv.textContent = `Attempts left: ${data.attempts}`;
+                attemptsDiv.classList.remove('hidden');
+                guessSection.classList.remove('hidden');
+                historyDiv.classList.remove('hidden');
+                historyDiv.innerHTML = '';
+                messageDiv.textContent = '';
+                messageDiv.classList.remove('text-red-400', 'text-green-400');
+                currentWordDisplay.textContent = '';
+                guessInput.value = '';
+                updateWordDisplay('');
+                guessInput.focus();
+            } catch (error) {
+                console.error('Error:', error);
+                messageDiv.textContent = 'Failed to start game. Please try again.';
+                messageDiv.classList.add('text-red-400');
+            }
+        });
+
+        guessInput.addEventListener('input', (e) => {
+            const input = e.target.value.trim().toLowerCase();
+            updateWordDisplay(input);
+        });
+
+        submitGuessButton.addEventListener('click', async () => {
+            try {
+                const guess = guessInput.value.trim();
+                if (!guess) return;
+                
+                const response = await fetch(`${API_URL}/submit_guess`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ guess })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                messageDiv.textContent = data.message;
+                attemptsDiv.textContent = `Attempts left: ${data.attempts}`;
+                historyDiv.innerHTML += `<p>${guess}: ${data.message}</p>`;
+                guessInput.value = '';
+                currentWordDisplay.textContent = '';
+
+                if (data.game_over) {
+                    guessSection.classList.add('hidden');
+                    messageDiv.classList.add(
+                        data.message.includes('Correct') ? 'text-green-400' : 'text-red-400'
+                    );
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                messageDiv.textContent = 'Failed to submit guess. Please try again.';
+                messageDiv.classList.add('text-red-400');
+            }
+        });
+
+        guessInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                submitGuessButton.click();
+            }
+        });
+    </script>
+</body>
+</html>
